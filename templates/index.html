@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Data Analyst Pro</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+    <style>
+        body { background-color: #f4f7fa; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+        .main-container { min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+        .card { border: none; border-radius: 0.75rem; box-shadow: 0 4px 25px rgba(0, 0, 0, 0.05); }
+        .upload-card { max-width: 500px; text-align: center; }
+        #results-container { display: none; width: 100%; max-width: 1400px; margin: 2rem auto; }
+        #eda-panel { background-color: #fff; padding: 1.5rem; border-radius: 0.75rem; }
+        #interaction-panel { background-color: #fff; padding: 1.5rem; border-radius: 0.75rem; }
+        .summary-item { display: flex; justify-content: space-between; padding: 0.75rem 0; border-bottom: 1px solid #eef2f7; font-size: 0.9rem; }
+        .summary-item:last-child { border-bottom: none; }
+        .summary-item span:first-child { color: #5a6a85; }
+        .summary-item span:last-child { font-weight: 500; color: #1e293b; }
+        .accordion-button { font-weight: 500; }
+        .accordion-button:not(.collapsed) { background-color: #f8f9fa; box-shadow: none; }
+        .badge { font-weight: 500; }
+        .correlation-matrix table { font-size: 0.8rem; }
+        #chat-history { height: 60vh; overflow-y: auto; background-color: #f8f9fa; padding: 1rem; border-radius: 0.5rem; }
+        .user-msg, .bot-msg { padding: 0.75rem 1.25rem; border-radius: 1.25rem; margin-bottom: 0.75rem; max-width: 80%; line-height: 1.5; }
+        .user-msg { background-color: #0d6efd; color: white; align-self: flex-end; }
+        .bot-msg { background-color: #e9ecef; color: #212529; align-self: flex-start; }
+        .chat-container { display: flex; flex-direction: column; gap: 0.5rem; }
+        .bot-msg.error { background-color: #f8d7da; color: #721c24; }
+        #loading-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255, 255, 255, 0.8); z-index: 9999; display: none; align-items: center; justify-content: center; flex-direction: column; gap: 1rem; }
+    </style>
+</head>
+<body>
+
+    <!-- Loading Overlay -->
+    <div id="loading-overlay">
+        <div class="spinner-border text-primary" style="width: 3rem; height: 3rem;" role="status"></div>
+        <p class="h5 mt-3 text-muted">Analyzing your data...</p>
+    </div>
+
+    <!-- Upload View -->
+    <div class="main-container" id="upload-view">
+        <div class="card upload-card p-4">
+            <div class="card-body">
+                <h2 class="card-title fw-bold"><i class="bi bi-robot me-2"></i>Data Analyst Pro</h2>
+                <p class="card-subtitle mb-4 text-muted">Upload a CSV or Excel file to get started.</p>
+                <form id="upload-form">
+                    <div class="mb-3">
+                        <input class="form-control form-control-lg" type="file" id="dataset" name="dataset" accept=".csv, .xlsx, .xls" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-lg w-100 mt-2">Analyze</button>
+                </form>
+                <div id="upload-error" class="text-danger mt-3"></div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Results View -->
+    <div id="results-container">
+        <header class="mb-4">
+            <h1 class="h3 fw-bold">Analysis for: <span id="filename-display" class="text-primary"></span></h1>
+        </header>
+        <div class="row g-4">
+            <!-- Left EDA Panel -->
+            <div class="col-lg-5">
+                <div id="eda-panel" class="card">
+                    <h5 class="fw-bold mb-3"><i class="bi bi-bar-chart-line-fill me-2"></i>Exploratory Data Analysis</h5>
+                    <div id="summary-stats"></div>
+                    <div class="accordion mt-3" id="column-accordion"></div>
+                    <div id="correlation-container" class="mt-4"></div>
+                </div>
+            </div>
+            <!-- Right Interaction Panel -->
+            <div class="col-lg-7">
+                <div id="interaction-panel" class="card">
+                    <ul class="nav nav-tabs" id="myTab" role="tablist">
+                        <li class="nav-item" role="presentation"><button class="nav-link active" id="chat-tab" data-bs-toggle="tab" data-bs-target="#chat-pane" type="button">Chat with Data</button></li>
+                        <li class="nav-item" role="presentation"><button class="nav-link" id="preview-tab" data-bs-toggle="tab" data-bs-target="#preview-pane" type="button">Data Preview</button></li>
+                    </ul>
+                    <div class="tab-content pt-3">
+                        <div class="tab-pane fade show active" id="chat-pane" role="tabpanel">
+                            <div id="chat-history" class="mb-3 chat-container"></div>
+                            <div class="input-group">
+                                <input type="text" id="question-input" class="form-control" placeholder="e.g., What is the average temperature?">
+                                <button id="ask-button" class="btn btn-success">Send</button>
+                            </div>
+                        </div>
+                        <div class="tab-pane fade" id="preview-pane" role="tabpanel">
+                            <div class="table-responsive"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Store filepath globally for chat sessions
+        let currentFilepath = '';
+
+        const uploadForm = document.getElementById('upload-form');
+        const loadingOverlay = document.getElementById('loading-overlay');
+        const uploadError = document.getElementById('upload-error');
+
+        uploadForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            loadingOverlay.style.display = 'flex';
+            uploadError.textContent = '';
+            
+            const formData = new FormData(uploadForm);
+            
+            try {
+                const response = await fetch('/analyze', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || 'An unknown error occurred.');
+                }
+                
+                renderResults(data);
+
+            } catch (error) {
+                console.error('Upload Error:', error);
+                uploadError.textContent = `Error: ${error.message}`;
+            } finally {
+                loadingOverlay.style.display = 'none';
+            }
+        });
+
+        function renderResults(data) {
+            currentFilepath = data.filepath;
+            
+            // Hide upload view, show results view
+            document.getElementById('upload-view').style.display = 'none';
+            document.getElementById('results-container').style.display = 'block';
+
+            // Set filename
+            document.getElementById('filename-display').textContent = data.filename;
+
+            // 1. Render Summary Stats
+            const summaryContainer = document.getElementById('summary-stats');
+            summaryContainer.innerHTML = `
+                <div class="summary-item"><span>Columns</span><span>${data.eda.summary.columns}</span></div>
+                <div class="summary-item"><span>Rows</span><span>${data.eda.summary.rows}</span></div>
+                <div class="summary-item"><span>Duplicate Rows</span><span>${data.eda.summary.duplicate_rows}</span></div>
+                <div class="summary-item"><span>Total Missing</span><span>${data.eda.summary.total_missing}</span></div>
+                <div class="summary-item"><span>Memory Usage</span><span>${data.eda.summary.memory_usage}</span></div>
+            `;
+            
+            // 2. Render Column Accordion
+            const accordionContainer = document.getElementById('column-accordion');
+            accordionContainer.innerHTML = data.eda.columns.map((col, index) => {
+                const isNumeric = col.type === 'Numeric';
+                const stats = isNumeric 
+                    ? `<li><strong>Mean:</strong> ${col.stats.mean}</li><li><strong>Std Dev:</strong> ${col.stats.std}</li><li><strong>Min:</strong> ${col.stats.min}</li><li><strong>Max:</strong> ${col.stats.max}</li>`
+                    : `<li><strong>Unique Values:</strong> ${col.stats.unique_values}</li><li><strong>Top Value:</strong> ${col.stats.top_value}</li>`;
+                const badgeClass = isNumeric ? 'bg-primary' : 'bg-secondary';
+
+                return `
+                <div class="accordion-item">
+                    <h2 class="accordion-header">
+                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapse-${index}">
+                            ${col.name} <span class="badge ${badgeClass} ms-auto me-2">${col.type}</span>
+                        </button>
+                    </h2>
+                    <div id="collapse-${index}" class="accordion-collapse collapse" data-bs-parent="#column-accordion">
+                        <div class="accordion-body">
+                            <ul class="list-unstyled mb-0">
+                                ${stats}
+                                <li><strong>Missing:</strong> ${col.missing_percent}%</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>`;
+            }).join('');
+
+            // 3. Render Correlation Matrix
+            const correlationContainer = document.getElementById('correlation-container');
+            if(data.eda.correlation_matrix_html) {
+                correlationContainer.innerHTML = `
+                    <h5 class="fw-bold mb-3 mt-4"><i class="bi bi-grid-3x3-gap-fill me-2"></i>Correlation Matrix</h5>
+                    <div class="correlation-matrix table-responsive">${data.eda.correlation_matrix_html}</div>
+                `;
+            }
+
+            // 4. Render Data Preview
+            document.querySelector('#preview-pane .table-responsive').innerHTML = data.preview_html;
+
+            // 5. Setup Chat
+            const chatHistory = document.getElementById('chat-history');
+            chatHistory.innerHTML = `<div class="bot-msg">Hi! I'm ready to answer questions about <strong>${data.filename}</strong>.</div>`;
+        }
+
+        // Chat functionality
+        const askButton = document.getElementById('ask-button');
+        const questionInput = document.getElementById('question-input');
+
+        async function handleAskQuestion() {
+            const question = questionInput.value.trim();
+            if (!question) return;
+
+            const chatHistory = document.getElementById('chat-history');
+            chatHistory.innerHTML += `<div class="user-msg">${question}</div>`;
+            questionInput.value = '';
+            chatHistory.scrollTop = chatHistory.scrollHeight;
+
+            try {
+                const response = await fetch('/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ question: question, filepath: currentFilepath })
+                });
+                const data = await response.json();
+                
+                const messageClass = data.error ? 'bot-msg error' : 'bot-msg';
+                const messageContent = data.answer || data.error;
+
+                chatHistory.innerHTML += `<div class="${messageClass}">${messageContent}</div>`;
+            } catch(error) {
+                chatHistory.innerHTML += `<div class="bot-msg error">Network error. Could not reach the server.</div>`;
+            } finally {
+                chatHistory.scrollTop = chatHistory.scrollHeight;
+            }
+        }
+        askButton.addEventListener('click', handleAskQuestion);
+        questionInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') handleAskQuestion(); });
+
+    </script>
+</body>
+</html>
